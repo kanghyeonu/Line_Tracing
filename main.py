@@ -34,7 +34,8 @@ mid_x = 960
 mid_y = 540
 
 # h, w = frame.shape()
-
+ret, frame = capture.read()
+print(frame.shape[1])
 
 # detecting line initialization
 while True:
@@ -135,6 +136,7 @@ while True:
         #cv2.line(frame, (x1, y1), (x2, y2), Red, 2)
 
     lane = util.line_judge(candidates, line_width, line_width_margin)
+    util.draw_grid(frame, lane)
         # print(lane)
     # x1, y1, x2, y2
     if len(lane) > 1:

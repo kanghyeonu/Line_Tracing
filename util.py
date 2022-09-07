@@ -51,16 +51,19 @@ def line_judge(candidates, line_width, margin):
                         lane.append(line2)
             # 2 or 1 diagonal lines
             else:
-                if x2 - x1 == 0 or x3 - x4 == 0:
-                    continue
+                if x2 - x1 == 0:
+                    m1 = 1
+                if x3 - x4 == 0:
+                    m2 = 1
                 # each line's gradiant, y intercept
-                m1 = (y2 - y1) / (x2 - x1)
-                n1 = y1 - (m1 * x1)
-                m2 = (y4 - y3) / (x4 - x3)
-                n2 = y3 - (m2 * x3)
+                else:
+                    m1 = (y2 - y1) / (x2 - x1)
+                    n1 = y1 - (m1 * x1)
+                    m2 = (y4 - y3) / (x4 - x3)
+                    n2 = y3 - (m2 * x3)
+
                 print('--------------------------------')
                 print(m1, m2)
-
                 # judge parallel line(margin of error is 10%)
                 if m1 * 0.9 < m2 < m1 * 1.1 and m2 * 0.9 < m1 < m2 * 1.1:
                     # distance calculation
@@ -77,6 +80,21 @@ def line_judge(candidates, line_width, margin):
                     continue
     return lane
 
+def draw_grid(frame, lane):
+
+    frame_width = frame.shape[1]
+    frame_height = frame.shape[0]
+    frame_width_mid = frame_width//2
+    for line in lane:
+        x1, y1, x2, y2 = line[0], line[1], line[2], line[3]
+        avr_x = int((x1 + x2) / 2)
+        avr_y = int((y1 + y2) / 2)
+        if avr_x < frame_width_mid:
+            pos_x = (avr_x - frame_width_mid) // 100
+
+
+    return frame
+
 def getLength(line):
     x1, y1 = line[0], line[1]
     x2, y2 = line[2], line[3]
@@ -85,7 +103,6 @@ def getLength(line):
 def extract_frames(path):
     filepath = path + '.mp4'
     video = cv2.VideoCapture(filepath)
-
     if not video.isOpened():
         print("video load fail")
         return
