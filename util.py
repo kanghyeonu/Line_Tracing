@@ -11,16 +11,51 @@ left_fit_hist = np.array([])
 global right_fit_hist
 right_fit_hist = np.array([])
 
-def init_lines(frame, x, w, y, h, lower, upper):
+# roi = [x, w, y, h]
+def line_info_init(frame, roi, lower, upper, margin=50):
+    lines = _init_lines(frame, roi[0], roi[1], roi[2], roi[3], lower, upper)
+    mid_x = (roi[0] + roi[1]) // 2
+    candidates_Lside = []
+    candidates_Rside = []
+    for line in lines:
+        x1, x2 = int(line[0][0]), int(line[0][2])
+        if abs(x1 - x2) < margin:
+            distance = abs(mid_x - x1)
+            if x1 < mid_x:
+                candidates_Lside.append(distance)
+            else:
+                candidates_Rside.append(distance)
+
+    if len(candidates_Rside) == 0 or len(candidates_Lside) == 0:
+        return -1
+
+    candidates_Rside.sort()
+    candidates_Lside.sort()
+    line_width = candidates_Rside[0] + candidates_Lside[0]
+    return line_width
+
+def _init_lines(frame, x, w, y, h, lower, upper):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    roi = gray[y:y + h, x:x + w]
+    roi = gray[y:y+h, x:w+x]
     blur = cv2.GaussianBlur(roi, (0, 0), 3, 3)
     white_mask = cv2.inRange(blur, lower, upper)
     extract = cv2.bitwise_and(blur, blur, mask=white_mask)
     canny = cv2.Canny(extract, 2000, 6000, apertureSize=5, L2gradient=True)
     lines = cv2.HoughLinesP(canny, 0.8, np.pi / 180, 90, minLineLength=75, maxLineGap=50)
-    # print(f'검출된 직선의 개수: {len(lines)}')
-    return frame, lines
+    # print(f'number of detected lines: {len(lines)}')
+    return lines
+
+'''
+아이디어 1
+기울기, y절편을 구해서 선을 재구성
+x = 0 , y절편 -> (0, y절편)
+x = roi_h, 그에대한 y_val -> (roi,h, y_val) 
+같이 x, y값을 통해 직선의 좌표를 재구성하는 것
+
+아이디어 2
+과거 직전 프레임 몇개에서 라인 추출 좌표를 가져와서 비교? 
+'''
+
 
 def line_judge(candidates, line_width, margin):
     # [x1, y1, x2, y2]
@@ -39,9 +74,9 @@ def line_judge(candidates, line_width, margin):
             end_x = max((x1+x2)/2, (x3+x4)/2)
 
             # pass horizontal line
-            if abs(y1 - y3) < 50:
-                continue
-            # 2 vertical lines
+            if abs(y1 - y2) < 50:
+                break
+            # 2 lines
             if abs(x1 - x2) < 50 and abs(x3 - x4) < 50 :
                 # vertical line matching case
                 if start_x + line_width - margin < end_x < start_x + line_width + margin:
@@ -51,9 +86,11 @@ def line_judge(candidates, line_width, margin):
                         lane.append(line2)
             # 2 or 1 diagonal lines
             else:
-                if x2 - x1 == 0:
+                if x2 - x1 == 0 and x4 - x3 != 0:
                     m1 = 1
-                if x3 - x4 == 0:
+                    m2 = (y4 - y3) / (x4 - x3)
+                elif x4 - x3 == 0 and x2 - x1 != 0:
+                    m1 = (y2 - y1) / (x2 - x1)
                     m2 = 1
                 # each line's gradiant, y intercept
                 else:
@@ -62,8 +99,8 @@ def line_judge(candidates, line_width, margin):
                     m2 = (y4 - y3) / (x4 - x3)
                     n2 = y3 - (m2 * x3)
 
-                print('--------------------------------')
-                print(m1, m2)
+                # print('--------------------------------')
+                # print(m1, m2)
                 # judge parallel line(margin of error is 10%)
                 if m1 * 0.9 < m2 < m1 * 1.1 and m2 * 0.9 < m1 < m2 * 1.1:
                     # distance calculation
@@ -80,25 +117,39 @@ def line_judge(candidates, line_width, margin):
                     continue
     return lane
 
-def draw_grid(frame, lane):
+# roi = [x, w, y, h]
+def draw_grid(frame, roi):
+    BLACK = (0, 0, 0)
+    # frame_width = frame.shape[1]
+    # frame_height = frame.shape[0]
+    # frame_width_mid = frame_width//2
+    roi_x, roi_y, roi_w, roi_h = roi[0], roi[2], roi[1], roi[3]
 
-    frame_width = frame.shape[1]
-    frame_height = frame.shape[0]
-    frame_width_mid = frame_width//2
-    for line in lane:
-        x1, y1, x2, y2 = line[0], line[1], line[2], line[3]
-        avr_x = int((x1 + x2) / 2)
-        avr_y = int((y1 + y2) / 2)
-        if avr_x < frame_width_mid:
-            pos_x = (avr_x - frame_width_mid) // 100
+    cv2.line(frame, (roi_x, roi_y+roi_h), (roi_x + roi_w, roi_h), BLACK, 2)
+    # draw horizontal grid line
+    for i in range((roi_y+roi_h-100), 0, -100):
+        cv2.line(frame, (roi_x, i),(roi_x+roi_w, i), BLACK, 1)
 
+    # draw vertical grid line
+    roi_mid_x = (roi_x+roi_w)//2
+    cv2.line(frame, (roi_mid_x, roi_y), (roi_mid_x, roi_y+roi_h), BLACK, 2)
+    for i in range(1, round((roi_x+roi_w-roi_mid_x)/100)):
+        cv2.line(frame, (roi_mid_x-100*i, roi_y),(roi_mid_x-100*i, roi_y+roi_h), BLACK, 1)
+        cv2.line(frame, (roi_mid_x+100*i, roi_y),(roi_mid_x+100*i, roi_y+roi_h), BLACK, 1)
+
+    # for line in lane:
+    #     x1, y1, x2, y2 = line[0], line[1], line[2], line[3]
+    #     avr_x = int((x1 + x2) / 2)
+    #     avr_y = int((y1 + y2) / 2)
+    #     if avr_x < frame_width_mid:
+    #         pos_x = (avr_x - frame_width_mid) // 100
 
     return frame
 
 def getLength(line):
     x1, y1 = line[0], line[1]
     x2, y2 = line[2], line[3]
-    return (x2 - x1)**2 + (y2 - y1)**2
+    return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 def extract_frames(path):
     filepath = path + '.mp4'
@@ -118,7 +169,7 @@ def extract_frames(path):
     except OSError:
         print('Error: Creating directory. ' + dir_name)
 
-    print('total video frame:', fps)
+    print('video frame:', fps)
     cnt = 1
     while True:
         ret, frame = video.read()
@@ -126,7 +177,7 @@ def extract_frames(path):
             break
         if int(video.get(1) % fps) == 0:
             cv2.imwrite('frames/'+str(cnt)+'.jpg', frame)
-            print(str(cnt)+'.jpg is created')
+            print('create a '+str(cnt)+'.jpg')
             cnt+=1
     video.release()
     print('extracting process complete')
